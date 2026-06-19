@@ -400,10 +400,18 @@ Current Thread ID:
         *state["messages"],
     ]
 
-    response = llm_with_tools.invoke(
+    try:
+
+        response = llm_with_tools.invoke(
         messages,
         config=config,
     )
+
+    except Exception as e:
+
+        print("LLM ERROR:", str(e))
+
+    raise
 
     return {
         "messages": [response]
