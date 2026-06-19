@@ -1,4 +1,5 @@
 import uuid
+from login_Ui import show_login_page
 
 import streamlit as st
 from langchain_core.messages import (
@@ -10,11 +11,37 @@ from langchain_core.messages import (
 from langraph_rag_backend import (
     chatbot,
     ingest_pdf,
-    retrieve_all_threads,
     thread_document_metadata,
 )
 
+from auth import (
+    signup_user,
+    login_user,
+    create_thread_for_user,
+    retrieve_user_threads,
+    delete_thread,
+)
 
+
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if "user_id" not in st.session_state:
+    st.session_state["user_id"] = None
+
+if "username" not in st.session_state:
+    st.session_state["username"] = None
+
+# =====================================================
+# Authentication Check
+# =====================================================
+
+if not st.session_state["logged_in"]:
+
+    show_login_page()
+
+    st.stop()
 # =====================================================
 # Utility Functions
 # =====================================================
@@ -29,13 +56,18 @@ def add_thread(thread_id):
 
 
 def reset_chat():
+
     new_thread = generate_thread_id()
+
+    create_thread_for_user(
+        new_thread,
+        st.session_state["user_id"]
+    )
 
     st.session_state["thread_id"] = new_thread
     st.session_state["message_history"] = []
 
     add_thread(new_thread)
-
 
 def load_conversation(thread_id):
     try:
@@ -58,13 +90,26 @@ def load_conversation(thread_id):
 # =====================================================
 
 if "thread_id" not in st.session_state:
-    st.session_state["thread_id"] = generate_thread_id()
+
+    new_thread = generate_thread_id()
+
+    st.session_state["thread_id"] = new_thread
+
+    create_thread_for_user(
+        new_thread,
+        st.session_state["user_id"]
+    )
 
 if "message_history" not in st.session_state:
     st.session_state["message_history"] = []
 
 if "chat_threads" not in st.session_state:
-    st.session_state["chat_threads"] = retrieve_all_threads()
+
+    st.session_state["chat_threads"] = (
+        retrieve_user_threads(
+            st.session_state["user_id"]
+        )
+    )
 
 if "ingested_docs" not in st.session_state:
     st.session_state["ingested_docs"] = {}
@@ -88,6 +133,26 @@ selected_thread = None
 # =====================================================
 
 st.sidebar.title("📄 LangGraph PDF Chatbot")
+
+st.sidebar.write(
+    f"👋 {st.session_state['username']}"
+)
+
+if st.sidebar.button(
+    "🚪 Logout",
+    use_container_width=True,
+):
+
+    st.session_state["logged_in"] = False
+    st.session_state["user_id"] = None
+    st.session_state["username"] = None
+    st.session_state["chat_threads"] = []
+    st.session_state["message_history"] = []
+
+    if "thread_id" in st.session_state:
+        del st.session_state["thread_id"]
+
+    st.rerun()
 
 st.sidebar.markdown(
     f"**Current Thread**\n\n`{thread_key}`"
@@ -180,16 +245,64 @@ else:
 
     for tid in threads:
 
-        if st.sidebar.button(
-            str(tid),
-            key=f"thread_{tid}",
-            use_container_width=True,
-        ):
-            selected_thread = tid
+        col1, col2 = st.sidebar.columns(
+            [4, 1]
+        )
+
+        with col1:
+
+            if st.button(
+                str(tid),
+                key=f"thread_{tid}",
+                use_container_width=True,
+            ):
+                selected_thread = tid
+
+        with col2:
+
+            if st.button(
+                "🗑️",
+                key=f"delete_{tid}",
+                use_container_width=True,
+            ):
+
+                delete_thread(
+                    tid,
+                    st.session_state["user_id"]
+                )
+
+                if tid in st.session_state["chat_threads"]:
+
+                    st.session_state[
+                        "chat_threads"
+                    ].remove(tid)
+
+                if (
+                    st.session_state["thread_id"]
+                    == tid
+                ):
+
+                    new_thread = generate_thread_id()
+
+                    create_thread_for_user(
+                        new_thread,
+                        st.session_state["user_id"]
+                    )
+
+                    st.session_state[
+                        "thread_id"
+                    ] = new_thread
+
+                    st.session_state[
+                        "message_history"
+                    ] = []
+
+                st.rerun()
 
 # =====================================================
-# Main UI
+# Main Chat Interface
 # =====================================================
+
 
 st.title("🤖 Multi Utility Chatbot")
 
