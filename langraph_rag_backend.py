@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 from typing import Annotated, Any, Dict, Optional, TypedDict
 
+from networkx import config
 import requests
 
 
@@ -350,48 +351,21 @@ Available Tools:
 
    * Retrieves information from uploaded PDF documents.
    * Use whenever information may exist inside the uploaded document.
-   * Examples:
-
-     * "What is my name?"
-     * "What is my school name?"
-     * "Summarize my resume."
-     * "What projects have I done?"
-     * Any question that could be answered from the uploaded PDF.
 
 2. web_search
 
    * Searches the internet for current or external information.
-   * Use when information is not available in the PDF or requires live data.
-   * Examples:
-
-     * Weather
-     * News
-     * Company information
-     * Current events
 
 3. calculator
 
    * Performs mathematical calculations.
-   * Use whenever numerical computation is required.
 
 4. get_stock_price
 
    * Retrieves stock market data.
 
-Decision Process:
-
-* First determine where the answer is most likely located.
-* If the answer can be found in the uploaded PDF, use rag_tool.
-* If the answer requires current or external information, use web_search.
-* If calculations are needed, use calculator.
-* If both document data and web information are required, use both tools.
-* Do not ask the user which tool to use.
-* Select tools automatically.
-* Combine information from multiple tools when needed.
-
 Current Thread ID:
 {thread_id}
-
 """
     )
 
@@ -403,20 +377,24 @@ Current Thread ID:
     try:
 
         response = llm_with_tools.invoke(
-        messages,
-        config=config,
-    )
+            messages,
+            config=config,
+        )
+
+        return {
+            "messages": [response]
+        }
 
     except Exception as e:
 
-        print("LLM ERROR:", str(e))
+        import traceback
 
-    raise
+        print("FULL ERROR:")
+        traceback.print_exc()
 
-    return {
-        "messages": [response]
-    }
-
+        raise RuntimeError(
+            f"LLM Error: {str(e)}"
+        )
 # -------------------
 # Tool Node
 # -------------------
