@@ -35,31 +35,30 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-print("TOKEN FOUND:", os.getenv("HUGGINGFACEHUB_API_TOKEN"))
 
-HF_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-
-if not HF_TOKEN:
-    raise ValueError("HUGGINGFACEHUB_API_TOKEN not found in .env file")
 # -------------------
 # LLM + Embeddings
     # -------------------
 
 from langchain_huggingface import (
     HuggingFaceEmbeddings,
-    HuggingFaceEndpoint,
-    ChatHuggingFace,
 )
 
-llm_endpoint = HuggingFaceEndpoint(
-    repo_id="Qwen/Qwen2.5-7B-Instruct",
-    huggingfacehub_api_token=HF_TOKEN,
+from langchain_groq import ChatGroq
+
+GROQ_API_KEY = os.getenv(
+    "GROQ_API_KEY"
+)
+
+if not GROQ_API_KEY:
+    raise ValueError(
+        "GROQ_API_KEY not found in .env file"
+    )
+
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    api_key=GROQ_API_KEY,
     temperature=0.3,
-    max_new_tokens=1024,
-)
-
-llm = ChatHuggingFace(
-    llm=llm_endpoint
 )
 
 embeddings = HuggingFaceEmbeddings(
@@ -392,9 +391,7 @@ Current Thread ID:
         print("FULL ERROR:")
         traceback.print_exc()
 
-        raise RuntimeError(
-            f"LLM Error: {str(e)}"
-        )
+        raise
 # -------------------
 # Tool Node
 # -------------------
