@@ -4,10 +4,19 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 from typing import Annotated, Any, Dict, Optional, TypedDict
+from urllib import response
 
 from networkx import config
 import requests
+import re
 
+from youtube_transcript_api import (
+    YouTubeTranscriptApi,
+)
+from youtube_transcript_api._errors import (
+    NoTranscriptFound,
+    TranscriptsDisabled,
+)
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
@@ -26,9 +35,6 @@ from langgraph.prebuilt import ToolNode, tools_condition
 # -------------------
 # Load Environment
 # -------------------
-from dotenv import load_dotenv
-import os
-
 from dotenv import load_dotenv
 import os
 
@@ -251,6 +257,105 @@ def get_stock_price(symbol: str) -> dict:
             "symbol": symbol,
             "error": str(e),
         }
+    
+
+#------------------------------
+#YOUTUBE SUMMARIZER TOOL
+#------------------------------
+
+
+@tool
+def youtube_summarizer(
+    video_url: str
+) -> str:
+    """
+    Summarize a YouTube video using its transcript.
+
+    Args:
+        video_url: Full YouTube URL
+
+    Returns:
+        Summary, key points, and takeaways.
+    """
+
+    try:
+
+        match = re.search(
+            r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})",
+            video_url,
+        )
+
+        if not match:
+            return "Invalid YouTube URL."
+
+        video_id = match.group(1)
+
+        try:
+
+            transcript = (
+                YouTubeTranscriptApi()
+                .fetch(video_id)
+            )
+
+        except TranscriptsDisabled:
+            return (
+                "Transcripts are disabled for this video."
+            )
+
+        except NoTranscriptFound:
+            return (
+                "No transcript available for this video."
+            )
+
+        if not transcript:
+            return (
+                "No transcript available for this video."
+            )
+
+        transcript_text = " ".join(
+            [
+                snippet.text
+                for snippet in transcript
+            ]
+        )
+
+        if not transcript_text.strip():
+            return (
+                "No transcript available for this video."
+            )
+
+        summary_prompt = f"""
+Summarize the following YouTube video transcript.
+
+Provide ONLY:
+
+- Summary (max 100 words)
+- 3 bullet key points
+
+Keep the response under 150 words.
+
+Transcript:
+
+{transcript_text[:2000]}
+"""
+
+        response = llm.invoke(
+            summary_prompt
+        )
+
+        return f""" YOUTUBE SUMMARY RESULT {response.content} END_YOUTUBE SUMMARY RESULT"""
+
+    except Exception as e:
+
+        import traceback
+        traceback.print_exc()
+
+        return (
+            f"YouTube summarization error: {str(e)}"
+        )
+#---------------------------------------------------------
+#rag tool
+#---------------------------------------------------------
 
 @tool
 def rag_tool(query: str) -> str:
@@ -300,8 +405,14 @@ tools = [
     web_search,
     calculator,
     get_stock_price,
+    youtube_summarizer,
     rag_tool,
 ]
+
+
+print("TOOLS:")
+for t in tools:
+    print(t.name)
 
 llm_with_tools = llm.bind_tools(tools)
 
@@ -404,7 +515,30 @@ AVAILABLE TOOLS
    - TSLA stock
    - MSFT stock quote
 
+5. youtube_summarizer
+   Purpose:
+   - Summarize YouTube videos using their transcripts.
+   - Extract key points, important takeaways, and concise summaries from YouTube content.
+
+   Use when:
+   - User provides a YouTube URL.
+   - User asks to summarize a YouTube video.
+   - User asks for notes, highlights, key points, or an overview of a YouTube video.
+   - User shares a youtube.com or youtu.be link.
+
+   Examples:
+   - Summarize this video:
+     https://www.youtube.com/watch?v=xxxxx
+
+   - Give me notes from this YouTube video.
+
+   - What are the key points discussed in this video?
+
+   - Explain this YouTube video:
+     https://youtu.be/xxxxx
+
 TOOL SELECTION RULES
+
 
 1. Always determine whether a tool is needed before answering.
 
@@ -422,18 +556,50 @@ TOOL SELECTION RULES
 
 8. Use get_stock_price whenever stock data is requested.
 
-9. Combine outputs from multiple tools into a single final answer.
+9. Use youtube_summarizer whenever:
+   - The user provides a YouTube URL.
+   - The user asks for a YouTube video summary.
+   - The user asks for notes, highlights, important takeaways, or key points from a YouTube video.
+   - The query contains a youtube.com or youtu.be link.
 
-10. If no tool is required, answer directly using your general knowledge.
+10. If a query contains a valid YouTube URL, strongly prefer youtube_summarizer over web_search.
 
-11. Do not mention internal tool names unless necessary.
+11. If a document is uploaded and the user's question could reasonably be answered from the document, always try rag_tool first.
 
-12. Do not explain your tool-selection process to the user.
+12. If both an uploaded document and external information are required, combine rag_tool and web_search results.
 
-13. If a tool fails, continue gracefully and provide the best possible answer.
+13. Combine outputs from multiple tools into a single final answer.
 
-14. If a document is uploaded and the user's question could reasonably be answered from the document, always try rag_tool first.
+14. If no tool is required, answer directly using your general knowledge.
 
+15. Never invent information that should come from a tool.
+
+16. If a tool fails, continue gracefully and provide the best possible answer.
+
+17. Do not mention internal tool names unless necessary.
+
+18. Do not explain your tool-selection process to the user.
+
+19. If multiple tools can answer a question, prefer the most specific tool for the task.
+
+20. For URL-based content:
+    - Use youtube_summarizer for YouTube video URLs.
+    - Use web_search for general website information.
+    - Use rag_tool only for uploaded PDFs.
+
+21. When summarizing YouTube videos:
+    - Provide a concise summary.
+    - Highlight important points.
+    - Mention key takeaways.
+    - Keep the answer structured and easy to read.
+
+22. When using multiple tools, synthesize the information into a coherent response rather than returning raw tool outputs.
+When youtube_summarizer returns a summary:
+
+- Return the tool output directly.
+- Do not rewrite it.
+- Do not summarize it again.
+- Do not add extra commentary.
 Current Thread ID:
 {thread_id}
 """
@@ -450,6 +616,7 @@ Current Thread ID:
             messages,
             config=config,
         )
+        
 
         return {
             "messages": [response]
@@ -555,6 +722,9 @@ def thread_document_metadata(
     )
 
 
+
+
+
 # -------------------
 # Example Usage
 # -------------------
@@ -589,3 +759,6 @@ if __name__ == "__main__":
             "\nAssistant:",
             result["messages"][-1].content,
         )
+
+
+
